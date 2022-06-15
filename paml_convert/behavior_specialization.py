@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
 from logging import error
+import logging
 
 import paml
 import uml
 
+l = logging.getLogger(__file__)
+l.setLevel(logging.WARN)
 
 class BehaviorSpecializationException(Exception):
     pass
@@ -39,13 +42,9 @@ class BehaviorSpecialization(ABC):
     def on_end(self):
         pass
 
+    @abstractmethod
     def process(self, record):
-        node = record.node.lookup()
-        if not isinstance(node, uml.CallBehaviorAction):
-            return # raise BehaviorSpecializationException(f"Cannot handle node type: {type(node)}")
-        elif str(node.behavior) not in self._behavior_func_map:
-            raise BehaviorSpecializationException(f"Failed to find handler for behavior: {node.behavior}")
-        return self._behavior_func_map[str(node.behavior)](record)
+        pass
 
     def resolve_container_spec(self, spec, addl_conditions=None):
         try:
@@ -62,6 +61,17 @@ class BehaviorSpecialization(ABC):
         return possible_container_types
 
 class DefaultBehaviorSpecialization(BehaviorSpecialization):
+
+    def process(self, record):
+        node = record.node.lookup()
+        if not isinstance(node, uml.CallBehaviorAction):
+            return # raise BehaviorSpecializationException(f"Cannot handle node type: {type(node)}")
+        elif str(node.behavior) not in self._behavior_func_map:
+            # raise BehaviorSpecializationException(f"Failed to find handler for behavior: {node.behavior}")
+            l.warning("Failed to find handler for behavior: {node.behavior}")
+            return
+        return self._behavior_func_map[str(node.behavior)](record)
+
     def _init_behavior_func_map(self) -> dict:
         return {
             "https://bioprotocols.org/paml/primitives/sample_arrays/EmptyContainer" : self.handle,
