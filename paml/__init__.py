@@ -23,6 +23,7 @@ from paml.data import *
 from paml.sample_maps import *
 from paml.primitive_execution import *
 from paml.decisions import *
+from paml.execution_engine_utils import *
 
 #########################################
 # Kludge for getting parents and TopLevels - workaround for pySBOL3 issue #234
@@ -248,7 +249,7 @@ def protocol_to_dot(self, legend=False):
             #dot.node(edge_id, label=edge_id)
             color = 'blue' if isinstance(edge, uml.ControlFlow) else 'black'
             if isinstance(source, uml.DecisionNode) and hasattr(edge, "guard"):
-                label = edge.guard.value if edge.guard and edge.guard.value is not None else "None"
+                label = edge.guard.value if edge.guard and not isinstance(edge.guard, uml.LiteralNull) and edge.guard.value is not None else "None"
                 label = "Else" if label == paml.DECISION_ELSE else str(label)
                 dot.edge(src_id, dest_id, label=label, color=color)
             else:
@@ -276,7 +277,7 @@ def activity_edge_flow_get_target(self):
     token_source_node = self.token_source.lookup().node.lookup()
     if self.edge:
         target = self.edge.lookup().target.lookup()
-    elif isinstance(token_source_node, uml.Pin): # Tokens for pins do not have an edge connecting pin to activity
+    elif isinstance(token_source_node, uml.InputPin): # Tokens for pins do not have an edge connecting pin to activity
         target = token_source_node.get_parent()
     elif isinstance(token_source_node, uml.CallBehaviorAction) and \
          isinstance(token_source_node.behavior.lookup(), paml.Protocol):
@@ -416,7 +417,7 @@ def primitive_inherit_parameters(self, parent_primitive):
     for p in parent_primitive.parameters:
         param = p.property_value
         if param.direction == uml.PARAMETER_IN:
-            self.add_input(param.name, param.type)
+            self.add_input(param.name, param.type, optional=(param.lower_value.value==0), default_value=param.default_value)
         elif param.direction == uml.PARAMETER_OUT:
             self.add_output(param.name, param.type)
         else:
