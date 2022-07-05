@@ -1,4 +1,5 @@
 import json
+import types
 import paml
 from paml_convert.plate_coordinates import coordinate_rect_to_row_col_pairs, get_aliquot_list, num2row
 import uml
@@ -84,6 +85,62 @@ def resolve_value(v):
             else:
                 return resolved
 
+def input_parameter_map(inputs: List[paml.ParameterValue]):
+    map = {}
+    for input in inputs:
+        i_parameter = input.parameter.lookup().property_value
+        value = input.value
+        map[i_parameter.name] = value.get_value()
+    return map
+
+def empty_container_compute_output(self, inputs, parameter):
+    if parameter.name == "samples" and \
+       parameter.type == 'http://bioprotocols.org/paml#SampleArray':
+        # Make a SampleArray
+        input_map = input_parameter_map(inputs)
+        spec = input_map["specification"]
+        contents = self.initialize_contents()
+        name = f"{parameter.name}"
+        sample_array = paml.SampleArray(name=name,
+                                   container_type=spec,
+                                   contents=contents)
+        return sample_array
+    else:
+        return None
+
+def plate_coordinates_compute_output(self, inputs, parameter):
+    if parameter.name == "samples" and \
+    parameter.type == 'http://bioprotocols.org/paml#SampleCollection':
+        input_map = input_parameter_map(inputs)
+        source = input_map["source"]
+        coordinates = input_map["coordinates"]
+        # convert coordinates into a boolean sample mask array
+        # 1. read source contents into array
+        # 2. create parallel array for entries noted in coordinates
+        mask_array = source.mask(coordinates)
+        mask = paml.SampleMask(source=source,
+                                mask=mask_array)
+        return mask
+
+def measure_absorbance_compute_output(self, inputs, parameter):
+    if parameter.name == "measurements" and \
+       parameter.type == 'http://bioprotocols.org/paml#SampleData':
+        input_map = input_parameter_map(inputs)
+        samples = input_map["samples"]
+        sample_data = paml.SampleData(from_samples=samples)
+        return sample_data
+
+primitive_to_output_function = {
+    "EmptyContainer" : empty_container_compute_output,
+    "PlateCoordinates" : plate_coordinates_compute_output,
+    "MeasureAbsorbance": measure_absorbance_compute_output
+}
+
+def initialize_primitive_compute_output(doc: sbol3.Document):
+    for k, v in primitive_to_output_function.items():
+        p = paml.get_primitive(doc, k)
+        p.compute_output = types.MethodType(v, p)
+
 
 def primitive_compute_output(self, inputs, parameter):
     """
@@ -93,55 +150,7 @@ def primitive_compute_output(self, inputs, parameter):
     :param parameter: Parameter needing value
     :return: value
     """
-
-    l.debug(f"Computing the output of primitive: {self.identity}, parameter: {parameter.name}")
-
-
-    if self.identity == 'https://bioprotocols.org/paml/primitives/sample_arrays/EmptyContainer' and \
-        parameter.name == "samples" and \
-        parameter.type == 'http://bioprotocols.org/paml#SampleArray':
-        # Make a SampleArray
-        for input in inputs:
-            i_parameter = input.parameter.lookup().property_value
-            value = input.value
-            if i_parameter.name == "specification":
-                spec = resolve_value(value)
-        contents = self.initialize_contents()
-        name = f"{parameter.name}"
-        sample_array = paml.SampleArray(name=name,
-                                   container_type=spec,
-                                   contents=contents)
-        return sample_array
-    elif self.identity == 'https://bioprotocols.org/paml/primitives/sample_arrays/PlateCoordinates' and \
-        parameter.name == "samples" and \
-        parameter.type == 'http://bioprotocols.org/paml#SampleCollection':
-        for input in inputs:
-            i_parameter = input.parameter.lookup().property_value
-            value = input.value
-            if i_parameter.name == "source":
-                source = resolve_value(value)
-            elif i_parameter.name == "coordinates":
-                coordinates = resolve_value(value)
-                # convert coordinates into a boolean sample mask array
-                # 1. read source contents into array
-                # 2. create parallel array for entries noted in coordinates
-                mask_array = source.mask(coordinates)
-        mask = paml.SampleMask(source=source,
-                               mask=mask_array)
-        return mask
-    elif self.identity == 'https://bioprotocols.org/paml/primitives/spectrophotometry/MeasureAbsorbance' and \
-        parameter.name == "measurements" and \
-        parameter.type == 'http://bioprotocols.org/paml#SampleData':
-        for input in inputs:
-            i_parameter = input.parameter.lookup().property_value
-            value = input.value
-            if i_parameter.name == "samples":
-                samples = resolve_value(value)
-
-        sample_data = paml.SampleData(from_samples=samples)
-        return sample_data
-    else:
-        return f"{parameter.name}"
+    pass
 paml.Primitive.compute_output = primitive_compute_output
 
 def empty_container_initialize_contents(self):
