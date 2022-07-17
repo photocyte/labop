@@ -12,7 +12,7 @@ l = logging.getLogger(__file__)
 l.setLevel(logging.ERROR)
 
 class MarkdownSpecialization(BehaviorSpecialization):
-    def __init__(self, out_path) -> None:
+    def __init__(self, out_path=None) -> None:
         super().__init__()
         self.out_path = out_path
         self.markdown = ""
@@ -27,9 +27,22 @@ class MarkdownSpecialization(BehaviorSpecialization):
             "https://bioprotocols.org/paml/primitives/liquid_handling/Provision": self.provision_container,
             "https://bioprotocols.org/paml/primitives/sample_arrays/PlateCoordinates": self.plate_coordinates,
             "https://bioprotocols.org/paml/primitives/spectrophotometry/MeasureAbsorbance": self.measure_absorbance,
+            # "https://bioprotocols.org/paml/primitives/liquid_handling/Dilute"
         }
 
+    def handle(self, record):
+        # Fallback method to covert to Markdown
+        call = record.call.lookup()
+        behavior = record.node.lookup().behavior.lookup()
+        behavior_id = behavior.display_id
+        parameter_value_map = call.parameter_value_map()
+        parameter_value_map_str = ",".join([f"{k}={v}" for k, v in parameter_value_map.items()])
+        self.markdown_steps += [f"{behavior_id}({parameter_value_map_str})"]
+
+
+
     def on_begin(self):
+        super().on_begin()
         if self.execution:
             protocol = self.execution.protocol.lookup()
             self.markdown_converter = MarkdownConverter(protocol.document)
@@ -79,11 +92,14 @@ class MarkdownSpecialization(BehaviorSpecialization):
         return markdown
 
     def on_end(self):
+        super().on_end()
         self.markdown += self._outputs_markdown(self.execution.parameter_values)
         self.markdown_steps += [self.reporting_step()]
         self.markdown += self._steps_markdown()
-        with open(self.out_path, "w") as f:
-            f.write(self.markdown)
+        if self.out_path:
+            with open(self.out_path, "w") as f:
+                f.write(self.markdown)
+        self.data = self.markdown
 
     def reporting_step(self):
         output_parameters = []

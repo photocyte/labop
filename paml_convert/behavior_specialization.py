@@ -1,9 +1,11 @@
+import sys
 from abc import ABC, abstractmethod
 from logging import error
 import logging
 
 import paml
 import uml
+import json
 
 l = logging.getLogger(__file__)
 l.setLevel(logging.WARN)
@@ -27,24 +29,41 @@ class BehaviorSpecialization(ABC):
         self.top_protocol = None
         self.execution = None
 
+        # This data field holds the results of the specialization
+        self.data = None
+
     def initialize_protocol(self, execution: paml.ProtocolExecution):
         self.execution = execution
 
-    @abstractmethod
     def _init_behavior_func_map(self) -> dict:
-        pass
+        return {}
 
-    @abstractmethod
     def on_begin(self):
-        pass
+        self.data = []
 
-    @abstractmethod
     def on_end(self):
-        pass
+        self.data = json.dumps(self.data)
 
     @abstractmethod
     def process(self, record):
-        pass
+        node = record.node.lookup()
+        if not isinstance(node, uml.CallBehaviorAction):
+            return # raise BehaviorSpecializationException(f"Cannot handle node type: {type(node)}")
+        elif str(node.behavior) not in self._behavior_func_map:
+            self.handle(record)
+            # raise BehaviorSpecializationException(f"Failed to find handler for behavior: {node.behavior}")
+        else: # Use specified handler
+            return self._behavior_func_map[str(node.behavior)](record)
+
+    def handle(self, record):
+        # Save basic information about the execution record
+        node = record.node.lookup()
+        node_data = {
+            "identity": node.identity,
+            "behavior": node.behavior,
+            "parameters" : node.input_parameter_values()
+        }
+        self.data.append(node_data)
 
     def resolve_container_spec(self, spec, addl_conditions=None):
         try:
@@ -79,12 +98,3 @@ class DefaultBehaviorSpecialization(BehaviorSpecialization):
             "https://bioprotocols.org/paml/primitives/sample_arrays/PlateCoordinates" : self.handle,
             "https://bioprotocols.org/paml/primitives/spectrophotometry/MeasureAbsorbance" : self.handle,
         }
-
-    def handle(self, record):
-        pass
-
-    def on_begin(self):
-        pass
-
-    def on_end(self):
-        pass
