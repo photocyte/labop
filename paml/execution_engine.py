@@ -147,7 +147,7 @@ class ExecutionEngine(ABC):
         """
 
         self.initialize(protocol, agent, id, parameter_values)
-        self.run(protocol, start_time=start_time)
+        self.run(protocol, start_time=start_time, permissive=permissive)
         self.finalize(protocol)
 
         return self.ex
@@ -155,7 +155,8 @@ class ExecutionEngine(ABC):
     def run(
         self,
         protocol: paml.Protocol,
-        start_time: datetime.datetime = None
+        start_time: datetime.datetime = None,
+        permissive: bool = False
     ):
 
         self.init_time(start_time)
@@ -165,14 +166,15 @@ class ExecutionEngine(ABC):
 
         # Iteratively execute all unblocked activities until no more tokens can progress
         while ready:
-            ready = self.step(ready)
+            ready = self.step(ready, permissive=permissive)
         return ready
 
 
     def step(
         self,
         ready: List[uml.ActivityNode],
-        node_outputs: Dict[uml.ActivityNode, Callable] = {}
+        node_outputs: Dict[uml.ActivityNode, Callable] = {},
+        permissive: bool = False
     ):
         for node in ready:
             self.current_node = node
@@ -185,7 +187,7 @@ class ExecutionEngine(ABC):
 
     def executable_activity_nodes(
         self,
-        permissive: bool
+        permissive: bool = False
     ) -> List[uml.ActivityNode]:
         """Find all of the activity nodes that are ready to be run given the current set of tokens
         Note that this will NOT identify activities with no in-flows: those are only set up as initiating nodes
@@ -212,19 +214,21 @@ class ManualExecutionEngine(ExecutionEngine):
     def run(
         self,
         protocol: paml.Protocol,
-        start_time: datetime.datetime = None
+        start_time: datetime.datetime = None,
+        permissive: bool = False
     ):
         self.init_time(start_time)
         self.ex.start_time = self.start_time # TODO: remove str wrapper after sbol_factory #22 fixed
         ready = protocol.initiating_nodes()
-        ready = self.advance(ready)
+        ready = self.advance(ready, permissive=permissive)
         choices = self.ready_message(ready)
         graph = self.ex.to_dot(ready=ready, done=self.ex.backtrace()[0])
         return ready, choices, graph
 
     def advance(
         self,
-        ready: List[uml.ActivityNode]
+        ready: List[uml.ActivityNode],
+        permissive: bool = False
     ):
         def auto_advance(r):
             # If Node is a CallBehavior action, then:
@@ -245,7 +249,7 @@ class ManualExecutionEngine(ExecutionEngine):
         auto_advance_nodes = [r for r in ready if auto_advance(r)]
 
         while len(auto_advance_nodes) > 0:
-            ready = self.step(auto_advance_nodes)
+            ready = self.step(auto_advance_nodes, permissive=permissive)
             auto_advance_nodes = [r for r in ready if auto_advance(r)]
 
         return self.executable_activity_nodes()
@@ -277,7 +281,8 @@ class ManualExecutionEngine(ExecutionEngine):
     def next(
         self,
         activity_node: uml.ActivityNode,
-        node_output: callable
+        node_output: callable,
+        permissive: bool = False
     ):
         """Execute a single ActivityNode using the node_output function to calculate its output pin values.
 
@@ -289,7 +294,7 @@ class ManualExecutionEngine(ExecutionEngine):
             _type_: _description_
         """
         successors = self.step([activity_node], node_outputs={activity_node: node_output})
-        ready = self.advance(successors)
+        ready = self.advance(successors, permissive=permissive)
         choices = self.ready_message(ready)
         graph = self.ex.to_dot(ready=ready, done=self.ex.backtrace()[0])
         return ready, choices, graph
